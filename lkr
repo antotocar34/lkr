@@ -1,0 +1,77 @@
+#! /usr/bin/bash
+# lkr lock directory
+set -eo pipefail
+
+PUBLIC_KEYFILE=~/.config/nixpkgs/homedir/.ssh/banana.pub
+
+get_ssh_rbw () {
+   if ! rbw unlocked; then
+       rbw unlock
+   fi
+   rbw get banana | head -n-1
+}
+
+fail () {
+    printf "%s\n" "$1"
+    exit "${2-1}"
+}
+
+lock () {
+    [ -d "$1" ] || fail "Error: $1 is not a directory"
+    fullpath=$(realpath "$1")
+    filedir=$(dirname "$fullpath")
+    filename=$(basename -- "$fullpath")
+    extension="${filename##*.}"
+    [ "$extension" == "priv" ] || fail "Directory must have .priv suffix"
+    filename="${filename%.*}"
+    tar c "$1" | age -R $PUBLIC_KEYFILE -e >> "${filedir}/${filename}.age"
+    rm -rf "$1"
+}
+
+unlock () {
+    PRIVATE_KEYFILE=$(get_ssh_rbw)
+    fullpath=$(realpath "$1")
+    echo $fullpath
+    filename=$(basename -- "$1")
+    extension="${filename##*.}"
+    filename="${filename%.*}"
+    [ "$extension" == "age" ] || fail "Please pass in age extension file"
+
+    age -d -i <(echo "$PRIVATE_KEYFILE") "$fullpath" | tar x --directory $(dirname $fullpath)  
+    rm -f "$1"
+}
+
+main () {
+    POSITIONAL_ARGS=()
+
+    while [[ $# -gt 0 ]]; do
+      case $1 in
+        -*|--*)
+          echo "Unknown option $1"
+          exit 1
+          ;;
+        *)
+          POSITIONAL_ARGS+=("$1") # save positional arg
+          shift # past argument
+          ;;
+      esac
+    done
+
+    set -- "${POSITIONAL_ARGS[@]}" # restore positional parameters
+
+
+    [ $# -eq 2 ] || fail "Usage: lkr [lock/unlock] [ARG]"
+    case "$1" in
+        lock)
+            lock "$2"
+            ;;
+        unlock)
+            unlock "$2"
+            ;;
+        *)
+            fail "Usage: lkr [lock/unlock] [ARG]"
+            ;;
+    esac
+}
+
+main "$@"
