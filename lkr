@@ -2,8 +2,11 @@
 # lkr lock directory
 set -eo pipefail
 
-PUBLIC_KEYFILE=~/.config/nixpkgs/homedir/.ssh/banana.pub
-PUBLIC_KEYDIR=~/.config/nixpkgs/homedir/.ssh
+PUBLIC_KEY=~/.config/nixpkgs/homedir/.ssh/banana.pub
+PRIVATE_KEY_ENCRYPTED=~/.config/nixpkgs/homedir/.ssh/banana.age
+RBW_PRIVATE_KEY_ENTRY="banana"
+LOCKED_EXTENSION="lkr"
+UNLOCKED_EXTENSION="priv"
 
 fail () {
     printf "%s\n" "$1" >&2
@@ -21,24 +24,16 @@ check_internet () {
     fi
 }
 
-get_rbw () {
-   if ! rbw unlocked; then
-       rbw unlock
-   fi
-   rbw get "$1"
-}
-
 get_private_key () {
-    if check_internet || rbw unlocked;
+    if check_internet;
     then
-        get_rbw "banana"
+        rbw get $RBW_PRIVATE_KEY_ENTRY
     else
         echo "Could not connect to internet" >&2
         echo "Using local key" >&2
-        age -d ${PUBLIC_KEYDIR}/banana.age
+        age -d $PRIVATE_KEY_ENCRYPTED
     fi
 }
-
 
 lock () {
     # [ -d "$1" ] || fail "Error: $1 is not a directory"
@@ -46,9 +41,9 @@ lock () {
     filedir=$(dirname "$fullpath")
     filename=$(basename -- "$fullpath")
     extension="${filename##*.}"
-    [ "$extension" == "priv" ] || fail "File/Directory must have .priv suffix"
+    [ "$extension" == "$UNLOCKED_EXTENSION" ] || fail "File/Directory must have .${UNLOCKED_EXTENSION} suffix"
     filename="${filename%.*}"
-    tar cP "$fullpath" | age -R $PUBLIC_KEYFILE -e >> "${filedir}/${filename}.age"
+    tar cP "$fullpath" | age -R $PUBLIC_KEY -e >> "${filedir}/${filename}.${LOCKED_EXTENSION}"
     rm -rf "$1"
 }
 
@@ -57,7 +52,7 @@ unlock () {
     filename=$(basename -- "$1")
     extension="${filename##*.}"
     filename="${filename%.*}"
-    [ "$extension" == "age" ] || fail "Please pass in age extension file"
+    [ "$extension" == $LOCKED_EXTENSION ] || fail "Please pass in .${LOCKED_EXTENSION} extension file"
 
     age -d -i <(get_private_key) "$fullpath" | tar xP
     rm -f "$1"
@@ -72,9 +67,6 @@ main () {
           echo "Unknown option $1"
           exit 1
           ;;
-        # lock-all)
-        #     fd -epriv . $HOME -x lock {}
-        #     ;;
         *)
           POSITIONAL_ARGS+=("$1") # save positional arg
           shift # past argument
@@ -84,20 +76,22 @@ main () {
 
     set -- "${POSITIONAL_ARGS[@]}" # restore positional parameters
 
-    # case "$1" in
-    #     lock-all)
-    #         echo "hi"
-    #         fd -epriv . $HOME -x lock {}
-    #         exit 0
-    # esac
+    case "$1" in
+        lock-all)
+            unlocked_files=(`echo $(fd -e "$UNLOCKED_EXTENSION" . "$HOME")`)
+            for f in "${unlocked_files[@]}"; do
+                lock $f
+            done
+            exit 0
+    esac
 
     [ $# -eq 2 ] || fail "Usage: lkr [lock/unlock] [ARG]"
     case "$1" in
-        lock)
-            [[ -e "$2" ]] || fail "$(realpath $2) does not exist"
+        l|lock)
+            [[ -e "$2" ]] || fail "$2 does not exist"
             lock "$2"
             ;;
-        unlock)
+        u|unlock)
             [[ -e "$2" ]] || fail "$2 does not exist"
             unlock "$2"
             ;;
