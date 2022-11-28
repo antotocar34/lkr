@@ -3,41 +3,63 @@
 set -eo pipefail
 
 PUBLIC_KEYFILE=~/.config/nixpkgs/homedir/.ssh/banana.pub
-
-get_ssh_rbw () {
-   if ! rbw unlocked; then
-       rbw unlock
-   fi
-   rbw get banana | head -n-1
-}
+PUBLIC_KEYDIR=~/.config/nixpkgs/homedir/.ssh
 
 fail () {
-    printf "%s\n" "$1"
+    printf "%s\n" "$1" >&2
     exit "${2-1}"
 }
 
+check_internet () {
+    wget -q --spider https://google.com
+    error_code=$?
+    if [ $error_code -eq 4 ]; 
+    then
+        return 1
+    else
+        return 0    
+    fi
+}
+
+get_rbw () {
+   if ! rbw unlocked; then
+       rbw unlock
+   fi
+   rbw get "$1"
+}
+
+get_private_key () {
+    if check_internet || rbw unlocked;
+    then
+        get_rbw "banana"
+    else
+        echo "Could not connect to internet" >&2
+        echo "Using local key" >&2
+        age -d ${PUBLIC_KEYDIR}/banana.age
+    fi
+}
+
+
 lock () {
-    [ -d "$1" ] || fail "Error: $1 is not a directory"
+    # [ -d "$1" ] || fail "Error: $1 is not a directory"
     fullpath=$(realpath "$1")
     filedir=$(dirname "$fullpath")
     filename=$(basename -- "$fullpath")
     extension="${filename##*.}"
-    [ "$extension" == "priv" ] || fail "Directory must have .priv suffix"
+    [ "$extension" == "priv" ] || fail "File/Directory must have .priv suffix"
     filename="${filename%.*}"
-    tar c "$1" | age -R $PUBLIC_KEYFILE -e >> "${filedir}/${filename}.age"
+    tar cP "$fullpath" | age -R $PUBLIC_KEYFILE -e >> "${filedir}/${filename}.age"
     rm -rf "$1"
 }
 
 unlock () {
-    PRIVATE_KEYFILE=$(get_ssh_rbw)
     fullpath=$(realpath "$1")
-    echo $fullpath
     filename=$(basename -- "$1")
     extension="${filename##*.}"
     filename="${filename%.*}"
     [ "$extension" == "age" ] || fail "Please pass in age extension file"
 
-    age -d -i <(echo "$PRIVATE_KEYFILE") "$fullpath" | tar x --directory $(dirname $fullpath)  
+    age -d -i <(get_private_key) "$fullpath" | tar xP
     rm -f "$1"
 }
 
@@ -50,6 +72,9 @@ main () {
           echo "Unknown option $1"
           exit 1
           ;;
+        # lock-all)
+        #     fd -epriv . $HOME -x lock {}
+        #     ;;
         *)
           POSITIONAL_ARGS+=("$1") # save positional arg
           shift # past argument
@@ -59,13 +84,21 @@ main () {
 
     set -- "${POSITIONAL_ARGS[@]}" # restore positional parameters
 
+    # case "$1" in
+    #     lock-all)
+    #         echo "hi"
+    #         fd -epriv . $HOME -x lock {}
+    #         exit 0
+    # esac
 
     [ $# -eq 2 ] || fail "Usage: lkr [lock/unlock] [ARG]"
     case "$1" in
         lock)
+            [[ -e "$2" ]] || fail "$(realpath $2) does not exist"
             lock "$2"
             ;;
         unlock)
+            [[ -e "$2" ]] || fail "$2 does not exist"
             unlock "$2"
             ;;
         *)
