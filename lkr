@@ -2,16 +2,24 @@
 # lkr lock directory
 set -eo pipefail
 
-PUBLIC_KEY=~/.config/nixpkgs/homedir/.ssh/banana.pub
-PRIVATE_KEY_ENCRYPTED=~/.config/nixpkgs/homedir/.ssh/banana.age
-RBW_PRIVATE_KEY_ENTRY="banana"
-LOCKED_EXTENSION="lkr"
-UNLOCKED_EXTENSION="priv"
-
 fail () {
     printf "%s\n" "$1" >&2
     exit "${2-1}"
 }
+
+CONFIG_FILE=~/.config/lkr/config.json
+
+if [ -z $CONFIG_FILE ] 
+    then
+    fail "No config.json file found in $CONFIG_FILE"
+fi
+
+PUBLIC_KEY=$(cat $CONFIG_FILE | jq -r .PUBLIC_KEY)
+PRIVATE_KEY_ENCRYPTED=$(cat $CONFIG_FILE | jq -r .PRIVATE_KEY_ENCRYPTED)
+RBW_PRIVATE_KEY_ENTRY=$(cat $CONFIG_FILE | jq -r .RBW_PRIVATE_KEY_ENTRY)
+LOCKED_EXTENSION="lkr"
+UNLOCKED_EXTENSION="priv"
+
 
 check_internet () {
     wget -q --spider https://google.com
@@ -78,9 +86,9 @@ main () {
 
     case "$1" in
         lock-all)
-            unlocked_files=(`echo $(fd -e "$UNLOCKED_EXTENSION" . "$HOME")`)
+            unlocked_files=($(echo $(fd -uu -e "$UNLOCKED_EXTENSION" . "$HOME")))
             for f in "${unlocked_files[@]}"; do
-                lock $f
+                lock "$f"
             done
             exit 0
     esac
