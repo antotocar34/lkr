@@ -1,5 +1,4 @@
 #! /usr/bin/bash
-# lkr lock directory
 set -eo pipefail
 
 fail () {
@@ -9,16 +8,37 @@ fail () {
 
 CONFIG_FILE=~/.config/lkr/config.json
 
-if [ -z $CONFIG_FILE ] 
+generate_config () {
+    [ ! -e ~/.config/lkr/config.json ] || fail "Will not overwrite ~/.config/lkr/config.json"
+    [ -e ~/.config ] || fail "Could not find ~/.config directory"
+    [ -e ~/.config/lkr ] || mkdir ~/.config/lkr
+    # https://stackoverflow.com/questions/38860529/create-json-using-jq-from-pipe-separated-keys-and-values-in-bash
+    s='PUBLIC_KEY|PRIVATE_KEY_ENCRYPTED|RBW_PRIVATE_KEY_ENTRY|LOCKED_EXTENSION|UNLOCKED_EXTENSION
+/path/to/public/key|/path/to/encrypted/private/key.age|lkr_key|locked|private'
+    jq -Rn '
+    ( input  | split("|") ) as $keys |
+    ( inputs | split("|") ) as $vals |
+    [[$keys, $vals] | transpose[] | {key:.[0],value:.[1]}] | from_entries
+    ' <<<"$s" >> ~/.config/lkr/config.json
+    echo "wrote to ~/.config/lkr/config.json"
+}
+
+case "$1" in
+    generate-config)
+        generate_config
+        exit 0
+esac
+
+if [ ! -e $CONFIG_FILE ] 
     then
-    fail "No config.json file found in $CONFIG_FILE"
+    fail "No config.json file found in $CONFIG_FILE, run lkr generate-config"
 fi
 
 PUBLIC_KEY=$(cat $CONFIG_FILE | jq -r .PUBLIC_KEY)
 PRIVATE_KEY_ENCRYPTED=$(cat $CONFIG_FILE | jq -r .PRIVATE_KEY_ENCRYPTED)
 RBW_PRIVATE_KEY_ENTRY=$(cat $CONFIG_FILE | jq -r .RBW_PRIVATE_KEY_ENTRY)
-LOCKED_EXTENSION="lkr"
-UNLOCKED_EXTENSION="priv"
+LOCKED_EXTENSION=$(cat $CONFIG_FILE | jq -r .LOCKED_EXTENSION)
+UNLOCKED_EXTENSION=$(cat $CONFIG_FILE | jq -r .UNLOCKED_EXTENSION)
 
 
 check_internet () {
@@ -32,8 +52,13 @@ check_internet () {
     fi
 }
 
+check_rbw_agent () {
+    pgrep rbw-agent > /dev/null
+    return $?
+}
+
 get_private_key () {
-    if check_internet;
+    if check_internet || check_rbw_agent;
     then
         rbw get $RBW_PRIVATE_KEY_ENTRY
     else
@@ -91,6 +116,7 @@ main () {
                 lock "$f"
             done
             exit 0
+            ;;
     esac
 
     [ $# -eq 2 ] || fail "Usage: lkr [lock/unlock] [ARG]"
