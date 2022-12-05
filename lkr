@@ -34,11 +34,11 @@ if [ ! -e $CONFIG_FILE ]
     fail "No config.json file found in $CONFIG_FILE, run lkr generate-config"
 fi
 
-PUBLIC_KEY=$(cat $CONFIG_FILE | jq -r .PUBLIC_KEY)
-PRIVATE_KEY_ENCRYPTED=$(cat $CONFIG_FILE | jq -r .PRIVATE_KEY_ENCRYPTED)
-RBW_PRIVATE_KEY_ENTRY=$(cat $CONFIG_FILE | jq -r .RBW_PRIVATE_KEY_ENTRY)
-LOCKED_EXTENSION=$(cat $CONFIG_FILE | jq -r .LOCKED_EXTENSION)
-UNLOCKED_EXTENSION=$(cat $CONFIG_FILE | jq -r .UNLOCKED_EXTENSION)
+PUBLIC_KEY=$(jq -r .PUBLIC_KEY $CONFIG_FILE)
+PRIVATE_KEY_ENCRYPTED=$(jq -r .PRIVATE_KEY_ENCRYPTED $CONFIG_FILE)
+RBW_PRIVATE_KEY_ENTRY=$(jq -r .RBW_PRIVATE_KEY_ENTRY $CONFIG_FILE)
+LOCKED_EXTENSION=$(jq -r .LOCKED_EXTENSION $CONFIG_FILE)
+UNLOCKED_EXTENSION=$(jq -r .UNLOCKED_EXTENSION $CONFIG_FILE)
 
 
 check_internet () {
@@ -69,7 +69,6 @@ get_private_key () {
 }
 
 lock () {
-    # [ -d "$1" ] || fail "Error: $1 is not a directory"
     fullpath=$(realpath "$1")
     filedir=$(dirname "$fullpath")
     filename=$(basename -- "$fullpath")
@@ -115,6 +114,17 @@ main () {
             for f in "${unlocked_files[@]}"; do
                 lock "$f"
             done
+            exit 0
+            ;;
+        peek)
+            [ -f "$2" ]
+            fullpath=$(realpath "$2")
+            filedir="$(dirname "$fullpath")"
+            filename=$(basename --suffix=${LOCKED_EXTENSION} "$fullpath")
+
+            unlock "$fullpath"
+            bat "${filedir}/${filename}.${UNLOCKED_EXTENSION}"
+            lock "${filedir}/${filename}.${UNLOCKED_EXTENSION}"
             exit 0
             ;;
     esac
