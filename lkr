@@ -6,6 +6,22 @@ fail () {
     exit "${2-1}"
 }
 
+HELP_STRING="""lkr 0.0.1
+age-based file locker
+
+USAGE:
+lkr [CMD] [ARG]
+
+OPTIONS:
+-h, --help    Prints this help
+
+SUBCOMMANDS:
+(l)ock        Encrypts files with ${LOCKED_EXTENSION} suffix
+(u)nlock      Decrypts files with ${UNLOCKED_EXTENSION} suffix
+peek          Cats encrypted files contents to stdout 
+lock-all      Uses fd to lock all unlocked files in \$HOME
+"""
+
 CONFIG_FILE=~/.config/lkr/config.json
 
 generate_config () {
@@ -95,6 +111,10 @@ main () {
 
     while [[ $# -gt 0 ]]; do
       case $1 in
+        -h|--help)
+          printf "%s" "$HELP_STRING" ;
+          exit 0
+          ;;
         -*|--*)
           echo "Unknown option $1"
           exit 1
@@ -123,13 +143,13 @@ main () {
             filename=$(basename --suffix=${LOCKED_EXTENSION} "$fullpath")
 
             unlock "$fullpath"
-            bat "${filedir}/${filename}.${UNLOCKED_EXTENSION}"
+            cat "${filedir}/${filename}.${UNLOCKED_EXTENSION}"
             lock "${filedir}/${filename}.${UNLOCKED_EXTENSION}"
             exit 0
             ;;
     esac
 
-    [ $# -eq 2 ] || fail "Usage: lkr [lock/unlock] [ARG]"
+    [ $# -eq 2 ] || fail "Usage: lkr [CMD] [ARG]"
     case "$1" in
         l|lock)
             [[ -e "$2" ]] || fail "$2 does not exist"
